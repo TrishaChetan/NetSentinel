@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NetSentinel</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#21262d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--critical:#ff4d6d;--high:#ff7b54;--medium:#f2cc60;--low:#56d364}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 22px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:20px}h1 small{color:var(--muted);font-weight:400;font-size:13px;margin-left:8px}
+.btn{background:var(--panel);color:var(--text);border:1px solid var(--line);padding:7px 14px;border-radius:7px;cursor:pointer;font-weight:600}
+.btn.primary{background:var(--accent);color:#04111f;border-color:var(--accent)}
+main{padding:18px 22px;display:grid;gap:16px;grid-template-columns:repeat(12,1fr)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi{grid-column:span 3}.kpi b{display:block;font-size:26px}.kpi span{color:var(--muted)}
+.w8{grid-column:span 8}.w4{grid-column:span 4}.w12{grid-column:span 12}
+@media(max-width:900px){.kpi{grid-column:span 6}.w8,.w4{grid-column:span 12}}
+h3{margin:0 0 10px;font-size:14px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.barrow{display:grid;grid-template-columns:130px 1fr 34px;gap:8px;align-items:center;margin:6px 0}
+.bar{height:10px;background:#0b0f14;border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px}th{color:var(--muted);text-align:left;font-weight:600;padding:6px}td{border-top:1px solid var(--line);padding:6px;vertical-align:top}
+.sev{padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;color:#0d1117}
+.sev.critical{background:var(--critical)}.sev.high{background:var(--high)}.sev.medium{background:var(--medium)}.sev.low{background:var(--low)}
+select{background:#0b0f14;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:3px}
+.muted{color:var(--muted)}#timeline{width:100%;height:120px}
+.new{animation:flash 1.5s}@keyframes flash{from{background:#1f6feb44}to{background:transparent}}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;background:#0b0f14;border:1px solid var(--line);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛰️ NetSentinel <small>Hybrid ML Network Intrusion Detection</small></h1>
+  <div>
+    <span id="state" class="pill">idle</span>
+    <button class="btn primary" onclick="startDemo()">▶ Live attack demo</button>
+    <button class="btn" onclick="stopDemo()">■ Stop</button>
+    <label class="btn">Upload .pcap<input type="file" accept=".pcap,.pcapng" hidden onchange="upload(this)"></label>
+  </div>
+</header>
+<main>
+  <div class="card kpi"><span>Flows analysed</span><b id="k-flows">0</b></div>
+  <div class="card kpi"><span>Packets</span><b id="k-pkts">0</b></div>
+  <div class="card kpi"><span>Traffic</span><b id="k-bytes">0 MB</b></div>
+  <div class="card kpi"><span>Alerts</span><b id="k-alerts">0</b></div>
+
+  <div class="card w8"><h3>Alert timeline</h3><canvas id="timeline"></canvas></div>
+  <div class="card w4"><h3>By attack type</h3><div id="types"><p class="muted">No alerts yet</p></div></div>
+
+  <div class="card w12"><h3>Alerts</h3>
+    <table><thead><tr><th>Time</th><th>Severity</th><th>Attack</th><th>Source → Destination</th><th>MITRE ATT&amp;CK</th><th>Engine</th><th>Detail</th><th>Status</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="8" class="muted">Start the live demo or upload a pcap to see detections.</td></tr></tbody></table>
+  </div>
+</main>
+<script>
+let lastId=0, all=[];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':Math.round(n);
+async function j(u,o){const r=await fetch(u,o);return r.json()}
+async function startDemo(){lastId=0;all=[];document.getElementById('rows').innerHTML='';await j('/api/demo/start',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})}
+async function stopDemo(){await j('/api/demo/stop',{method:'POST'})}
+async function upload(inp){const fd=new FormData();fd.append('file',inp.files[0]);document.getElementById('state').textContent='analysing pcap…';
+  const r=await j('/api/pcap',{method:'POST',body:fd});document.getElementById('state').textContent=r.detail?('error: '+r.detail):`pcap: ${r.flows} flows, ${r.alerts.length} alerts`;}
+async function setStatus(id,s){await j('/api/alerts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})})}
+function row(a,isNew){const t=new Date(a.ts*1000).toLocaleTimeString();
+  const opts=['open','investigating','resolved','false_positive'].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('');
+  return `<tr class="${isNew?'new':''}"><td>${t}</td><td><span class="sev ${esc(a.severity)}">${esc(a.severity)}</span></td><td><b>${esc(a.attack)}</b></td>
+  <td>${esc(a.src)} → ${esc(a.dst)}${a.dport?':'+a.dport:''}</td><td>${esc(a.mitre_id)} <span class="muted">${esc(a.mitre_name)}</span></td>
+  <td><span class="pill">${esc(a.source)}</span></td><td class="muted">${esc(a.detail)}</td>
+  <td><select onchange="setStatus(${a.id},this.value)">${opts}</select></td></tr>`}
+function drawTimeline(){const c=document.getElementById('timeline'),x=c.getContext('2d');c.width=c.clientWidth*devicePixelRatio;c.height=120*devicePixelRatio;x.scale(devicePixelRatio,devicePixelRatio);
+  const W=c.clientWidth,H=120;x.clearRect(0,0,W,H);if(!all.length)return;const ts=all.map(a=>a.ts),lo=Math.min(...ts),hi=Math.max(...ts)+1;
+  const col={critical:'#ff4d6d',high:'#ff7b54',medium:'#f2cc60',low:'#56d364'};x.strokeStyle='#21262d';x.beginPath();x.moveTo(0,H-14);x.lineTo(W,H-14);x.stroke();
+  const types=[...new Set(all.map(a=>a.attack))];all.forEach(a=>{const px=8+(a.ts-lo)/(hi-lo)*(W-16),py=10+types.indexOf(a.attack)*((H-34)/Math.max(1,types.length-1||1));
+  x.fillStyle=col[a.severity]||'#58a6ff';x.beginPath();x.arc(px,py,5,0,7);x.fill()});
+  x.fillStyle='#8b949e';x.font='11px system-ui';x.fillText(new Date(lo*1000).toLocaleTimeString(),4,H-2);x.textAlign='right';x.fillText(new Date(hi*1000).toLocaleTimeString(),W-4,H-2);x.textAlign='left'}
+async function tick(){
+  const s=await j('/api/stats');document.getElementById('k-flows').textContent=fmt(s.flows||0);document.getElementById('k-pkts').textContent=fmt(s.packets||0);
+  document.getElementById('k-bytes').textContent=((s.bytes||0)/1e6).toFixed(1)+' MB';
+  const n=Object.values(s.by_attack||{}).reduce((a,b)=>a+b,0);document.getElementById('k-alerts').textContent=n;
+  if(s.demo_running)document.getElementById('state').textContent='● live demo running';else if(document.getElementById('state').textContent.startsWith('●'))document.getElementById('state').textContent='demo finished';
+  const max=Math.max(1,...Object.values(s.by_attack||{}));
+  document.getElementById('types').innerHTML=n?Object.entries(s.by_attack).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="barrow"><span>${esc(k)}</span><div class="bar"><i style="width:${v/max*100}%"></i></div><b>${v}</b></div>`).join(''):'<p class="muted">No alerts yet</p>';
+  const fresh=await j('/api/alerts?since_id='+lastId);
+  if(fresh.length){if(!all.length)document.getElementById('rows').innerHTML='';fresh.reverse().forEach(a=>{all.push(a);document.getElementById('rows').insertAdjacentHTML('afterbegin',row(a,lastId>0))});lastId=Math.max(...fresh.map(a=>a.id));drawTimeline()}
+  else if(n===0&&all.length){all=[];lastId=0;document.getElementById('rows').innerHTML='';drawTimeline()}
+}
+setInterval(tick,1000);tick();addEventListener('resize',drawTimeline);
+</script>
+</body>
+</html>

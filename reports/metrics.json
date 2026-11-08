@@ -1,0 +1,154 @@
+{
+  "dataset": "simulated (train seeds 1-8, test seeds 100-103)",
+  "train_flows": 48935,
+  "test_flows": 24586,
+  "macro_f1": 0.9976,
+  "weighted_f1": 0.9983,
+  "benign_false_positive_rate_classifier": 0.00164,
+  "benign_false_positive_rate_anomaly": 0.01021,
+  "per_class": {
+    "BENIGN": {
+      "precision": 0.9988,
+      "recall": 0.9984,
+      "f1-score": 0.9986,
+      "support": 14600.0
+    },
+    "DNS-Tunneling": {
+      "precision": 0.9834,
+      "recall": 0.9875,
+      "f1-score": 0.9854,
+      "support": 1437.0
+    },
+    "DoS-SYNFlood": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 4800.0
+    },
+    "Exfiltration": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 12.0
+    },
+    "PortScan": {
+      "precision": 0.9996,
+      "recall": 1.0,
+      "f1-score": 0.9998,
+      "support": 2373.0
+    },
+    "SSH-BruteForce": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 720.0
+    },
+    "Slowloris": {
+      "precision": 1.0,
+      "recall": 0.9984,
+      "f1-score": 0.9992,
+      "support": 644.0
+    }
+  },
+  "false_alerts_per_hour_benign_only": 0.0,
+  "zero_day_experiment": [
+    {
+      "held_out_class": "DNS-Tunneling",
+      "test_flows": 1437,
+      "anomaly_detector": 0.0007,
+      "classifier_other_attack": 0.0,
+      "total_flagged": 0.0007,
+      "incident_detected_full_pipeline": "3/3"
+    },
+    {
+      "held_out_class": "DoS-SYNFlood",
+      "test_flows": 4800,
+      "anomaly_detector": 0.5025,
+      "classifier_other_attack": 0.0,
+      "total_flagged": 0.5025,
+      "incident_detected_full_pipeline": "3/3"
+    },
+    {
+      "held_out_class": "Exfiltration",
+      "test_flows": 12,
+      "anomaly_detector": 1.0,
+      "classifier_other_attack": 0.0,
+      "total_flagged": 1.0,
+      "incident_detected_full_pipeline": "3/3"
+    },
+    {
+      "held_out_class": "PortScan",
+      "test_flows": 2373,
+      "anomaly_detector": 0.0093,
+      "classifier_other_attack": 0.0,
+      "total_flagged": 0.0093,
+      "incident_detected_full_pipeline": "3/3"
+    },
+    {
+      "held_out_class": "SSH-BruteForce",
+      "test_flows": 720,
+      "anomaly_detector": 0.0,
+      "classifier_other_attack": 0.0,
+      "total_flagged": 0.0,
+      "incident_detected_full_pipeline": "3/3"
+    },
+    {
+      "held_out_class": "Slowloris",
+      "test_flows": 644,
+      "anomaly_detector": 0.9037,
+      "classifier_other_attack": 0.0016,
+      "total_flagged": 0.9053,
+      "incident_detected_full_pipeline": "3/3"
+    }
+  ],
+  "top_features": [
+    [
+      "pkt_len_mean",
+      0.1012
+    ],
+    [
+      "pkt_len_min",
+      0.0909
+    ],
+    [
+      "fwd_pkt_len_mean",
+      0.0902
+    ],
+    [
+      "pkt_len_max",
+      0.0807
+    ],
+    [
+      "zero_payload_ratio",
+      0.0583
+    ],
+    [
+      "payload_bytes",
+      0.0576
+    ],
+    [
+      "fwd_bytes",
+      0.0442
+    ],
+    [
+      "up_down_bytes_ratio",
+      0.0427
+    ],
+    [
+      "dst_port",
+      0.0425
+    ],
+    [
+      "avg_payload",
+      0.0397
+    ],
+    [
+      "pkt_len_std",
+      0.0321
+    ],
+    [
+      "iat_max",
+      0.031
+    ]
+  ]
+}

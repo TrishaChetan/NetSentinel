@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+models/*.joblib
+data/*
+!data/.gitkeep
+samples/*.pcap
+samples/*.pcapng
+*.db
