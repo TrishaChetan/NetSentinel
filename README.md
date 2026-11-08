@@ -4,6 +4,8 @@ NetSentinel is a network IDS that turns raw packets into flows and detects attac
 a supervised classifier for known attacks, an unsupervised anomaly detector for unknown ones, and stateful
 window-based rules for attacks that only show up in aggregate. Alerts are mapped to **MITRE ATT&CK** and shown on a live dashboard.
 
+![tests](https://github.com/TrishaChetan/NetSentinel/actions/workflows/tests.yml/badge.svg)
+
 > Final-year cybersecurity project · Python · scikit-learn · Scapy · FastAPI
 
 ## Highlights
