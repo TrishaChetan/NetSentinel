@@ -184,12 +184,12 @@ class Detector:
         return joblib.load(path)
 
 
-def analyse_packets(det: Detector, packets: Iterable[Packet]) -> dict:
+def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine | None = None) -> dict:
     t = time.time()
     flows = alerts = 0
     out = []
     by_label: dict[str, int] = {}
-    for f, lab, alert in det.run(packets):
+    for f, lab, alert in det.run(packets, rules=rules):
         flows += 1
         by_label[lab] = by_label.get(lab, 0) + 1
         if alert:

@@ -16,6 +16,27 @@ from dataclasses import dataclass
 from .flows import TCP, UDP, Flow
 
 
+# HOME_NET, like Snort/Suricata's $HOME_NET variable (RFC 1918 by default)
+DEFAULT_HOME_NET = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+
+
+def parse_home_net(spec) -> list:
+    """Parse a HOME_NET definition into a list of networks.
+
+    Accepts a comma/space separated string ("10.0.0.0/8, 100.64.0.0/10"),
+    a Snort-style bracketed list ("[10.0.0.0/8,192.168.1.0/24]"), single IPs,
+    or any iterable of those. Raises ValueError on an invalid entry.
+    """
+    if spec is None:
+        spec = DEFAULT_HOME_NET
+    if isinstance(spec, str):
+        spec = spec.strip().strip("[]").replace(",", " ").split()
+    nets = [ipaddress.ip_network(str(s).strip(), strict=False) for s in spec if str(s).strip()]
+    if not nets:
+        raise ValueError("HOME_NET must contain at least one network")
+    return nets
+
+
 @dataclass
 class RuleHit:
     rule: str
@@ -30,11 +51,13 @@ class RuleHit:
 class RuleEngine:
     def __init__(self, scan_ports=25, scan_window=60, flood_flows=100, flood_window=10,
                  brute_flows=10, brute_window=60, dns_len=150, dns_count=20, cooldown=120,
-                 exfil_bytes=1_000_000, exfil_ratio=10.0, rare_peers=2, warmup_flows=200):
+                 exfil_bytes=1_000_000, exfil_ratio=10.0, rare_peers=2, warmup_flows=200,
+                 home_net=None):
         self.cfg = dict(scan_ports=scan_ports, scan_window=scan_window, flood_flows=flood_flows,
                         flood_window=flood_window, brute_flows=brute_flows, brute_window=brute_window,
                         dns_len=dns_len, dns_count=dns_count, exfil_bytes=exfil_bytes,
                         exfil_ratio=exfil_ratio, rare_peers=rare_peers, warmup_flows=warmup_flows)
+        self.home_net = parse_home_net(home_net)
         self.peers: dict[str, set] = defaultdict(set)  # external dst -> internal hosts that talked to it
         self.seen_flows = 0
         self.cooldown = cooldown
@@ -55,16 +78,12 @@ class RuleEngine:
         while d and now - (d[0][0] if isinstance(d[0], tuple) else d[0]) > window:
             d.popleft()
 
-    # HOME_NET, like Snort/Suricata's $HOME_NET variable (RFC 1918 by default)
-    HOME_NET = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
-
-    @classmethod
-    def _internal(cls, ip: str) -> bool:
+    def _internal(self, ip: str) -> bool:
         try:
             a = ipaddress.ip_address(ip)
         except ValueError:
             return False
-        return any(a in n for n in cls.HOME_NET)
+        return any(a.version == n.version and a in n for n in self.home_net)
 
     def observe(self, f: Flow) -> list[RuleHit]:
         c, ts, hits = self.cfg, f.start, []

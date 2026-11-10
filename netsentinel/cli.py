@@ -3,15 +3,20 @@
     python -m netsentinel.cli simulate --out samples/demo.pcap --duration 300
     python -m netsentinel.cli analyze samples/demo.pcap [--json alerts.json]
     sudo python -m netsentinel.cli live --iface eth0
+
+Set your internal ranges with --home-net "10.0.0.0/8,100.64.0.0/10" or the
+NETSENTINEL_HOME_NET environment variable (default: RFC 1918).
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime
 
 from .capture import read_pcap, sniff_live
 from .detector import Detector, analyse_packets
+from .rules import RuleEngine, parse_home_net
 from .simulator import ATTACK_TYPES, Sim, write_pcap
 
 SEV_COLOR = {"critical": "\033[95m", "high": "\033[91m", "medium": "\033[93m", "low": "\033[92m"}
@@ -34,6 +39,9 @@ def main(argv=None):
     a.add_argument("pcap"); a.add_argument("--json")
     lv = sub.add_parser("live", help="sniff a live interface (root required)")
     lv.add_argument("--iface"); lv.add_argument("--bpf", default="ip")
+    for p in (a, lv):
+        p.add_argument("--home-net", default=os.environ.get("NETSENTINEL_HOME_NET"),
+                       help="internal networks, e.g. '10.0.0.0/8,100.64.0.0/10' (default: RFC 1918)")
     args = ap.parse_args(argv)
 
     if args.cmd == "simulate":
@@ -42,9 +50,15 @@ def main(argv=None):
         print(f"wrote {len(pkts)} packets -> {args.out}")
         return
 
+    try:
+        home_net = parse_home_net(args.home_net)
+    except ValueError as e:
+        ap.error(f"invalid --home-net: {e}")
+    print("HOME_NET:", ", ".join(map(str, home_net)))
+
     det = Detector.load()
     if args.cmd == "analyze":
-        r = analyse_packets(det, read_pcap(args.pcap))
+        r = analyse_packets(det, read_pcap(args.pcap), rules=RuleEngine(home_net=home_net))
         for al in r["alerts"]:
             show(al)
         print(f"\n{r['flows']} flows, {len(r['alerts'])} alerts in {r['seconds']} s")
@@ -52,7 +66,7 @@ def main(argv=None):
             json.dump(r, open(args.json, "w"), indent=2)
     else:
         print(f"sniffing {args.iface or 'default interface'} … Ctrl+C to stop")
-        for _, _, al in det.run(sniff_live(args.iface, args.bpf), batch=16):
+        for _, _, al in det.run(sniff_live(args.iface, args.bpf), batch=16, rules=RuleEngine(home_net=home_net)):
             if al:
                 show(al.to_dict())
 
