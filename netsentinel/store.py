@@ -51,6 +51,10 @@ class AlertStore:
             return [dict(r) for r in self.db.execute(
                 "SELECT * FROM alerts WHERE id > ? ORDER BY id DESC LIMIT ?", (since_id, limit))]
 
+    def all(self) -> list[dict]:
+        with self.lock:
+            return [dict(r) for r in self.db.execute("SELECT * FROM alerts ORDER BY id")]
+
     def set_status(self, alert_id: int, status: str) -> bool:
         with self.lock:
             cur = self.db.execute("UPDATE alerts SET status=? WHERE id=?", (status, alert_id))

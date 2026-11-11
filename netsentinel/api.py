@@ -11,11 +11,12 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 
 from .capture import read_pcap
 from .detector import MODEL_PATH, Detector, analyse_packets
+from .export import FORMATS, filter_alerts, render
 from .simulator import ATTACK_TYPES, Sim
 from .store import AlertStore
 
@@ -56,6 +57,21 @@ def alerts(since_id: int = 0, limit: int = 200):
 @app.get("/api/stats")
 def stats():
     return store.stats() | {"demo_running": _demo["running"]}
+
+
+@app.get("/api/alerts/export")
+def export_alerts(format: str = "jsonl", min_severity: str | None = None, status: str | None = None):
+    """Download alerts as CSV or JSON Lines (SIEM-ready), optionally filtered."""
+    if format not in FORMATS:
+        raise HTTPException(400, f"format must be one of {', '.join(FORMATS)}")
+    try:
+        rows = filter_alerts(store.all(), min_severity, status)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    media = "text/csv" if format == "csv" else "application/x-ndjson"
+    name = f"netsentinel-alerts-{time.strftime('%Y%m%d-%H%M%S')}.{format}"
+    return Response(render(rows, format), media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.patch("/api/alerts/{alert_id}")

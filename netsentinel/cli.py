@@ -2,6 +2,7 @@
 
     python -m netsentinel.cli simulate --out samples/demo.pcap --duration 300
     python -m netsentinel.cli analyze samples/demo.pcap [--json alerts.json]
+    python -m netsentinel.cli analyze samples/demo.pcap --export alerts.jsonl --min-severity high
     sudo python -m netsentinel.cli live --iface eth0
 
 Set your internal ranges with --home-net "10.0.0.0/8,100.64.0.0/10" or the
@@ -16,6 +17,7 @@ from datetime import datetime
 
 from .capture import read_pcap, sniff_live
 from .detector import Detector, analyse_packets
+from .export import SEVERITY_ORDER, filter_alerts, format_from_path, render
 from .rules import RuleEngine, parse_home_net
 from .simulator import ATTACK_TYPES, Sim, write_pcap
 
@@ -37,6 +39,8 @@ def main(argv=None):
     s.add_argument("--attacks", nargs="*", default=ATTACK_TYPES); s.add_argument("--seed", type=int, default=7)
     a = sub.add_parser("analyze", help="analyse a pcap file")
     a.add_argument("pcap"); a.add_argument("--json")
+    a.add_argument("--export", metavar="FILE", help="write alerts as .csv or .jsonl (SIEM-ready)")
+    a.add_argument("--min-severity", choices=list(SEVERITY_ORDER), help="only export alerts at or above this level")
     lv = sub.add_parser("live", help="sniff a live interface (root required)")
     lv.add_argument("--iface"); lv.add_argument("--bpf", default="ip")
     for p in (a, lv):
@@ -64,6 +68,12 @@ def main(argv=None):
         print(f"\n{r['flows']} flows, {len(r['alerts'])} alerts in {r['seconds']} s")
         if args.json:
             json.dump(r, open(args.json, "w"), indent=2)
+        if args.export:
+            rows = filter_alerts(r["alerts"], args.min_severity)
+            fmt = format_from_path(args.export)
+            with open(args.export, "w", encoding="utf-8", newline="") as fh:
+                fh.write(render(rows, fmt))
+            print(f"exported {len(rows)} alert(s) as {fmt} -> {args.export}")
     else:
         print(f"sniffing {args.iface or 'default interface'} … Ctrl+C to stop")
         for _, _, al in det.run(sniff_live(args.iface, args.bpf), batch=16, rules=RuleEngine(home_net=home_net)):
