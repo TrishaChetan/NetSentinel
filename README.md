@@ -15,6 +15,7 @@ window-based rules for attacks that only show up in aggregate. Alerts are mapped
 - **Layer 2 — Isolation Forest** trained on benign traffic only, for zero-day / novel behaviour.
 - **Layer 3 — Rule engine** (like Snort/Suricata thresholds): port scan, SYN flood, SSH brute force, DNS tunnelling, and exfiltration to rare destinations.
 - **Alert hygiene**: per-class evidence thresholds, de-duplication and cooldowns — **0 false alerts/hour** on attack-free test traffic.
+- **Webhook alerts**: set `NETSENTINEL_WEBHOOK_URL` (Slack, Discord, Teams or any HTTP endpoint) and alerts at or above `NETSENTINEL_WEBHOOK_MIN_SEVERITY` (default `high`) are pushed as they happen — from the dashboard, pcap uploads and `live` capture. `POST /api/webhook/test` sends a sample alert to check the setup.
 - **SIEM export**: download alerts as CSV or JSON Lines (with `@timestamp`, ready for Elastic, Splunk or Wazuh) from `GET /api/alerts/export?format=jsonl&min_severity=high&status=open`, or from the CLI with `analyze capture.pcap --export alerts.jsonl --min-severity high`.
 - **Configurable HOME_NET**: tell NetSentinel which ranges are yours with `--home-net "10.0.0.0/8,100.64.0.0/10"` (or `NETSENTINEL_HOME_NET`), just like Snort/Suricata's `$HOME_NET`. Defaults to RFC 1918; IPv6 supported.
 - **Inputs**: pcap/pcapng files, live interface sniffing, or the built-in traffic simulator.

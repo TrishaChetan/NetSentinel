@@ -18,6 +18,7 @@ from datetime import datetime
 from .capture import read_pcap, sniff_live
 from .detector import Detector, analyse_packets
 from .export import SEVERITY_ORDER, filter_alerts, format_from_path, render
+from .notify import WebhookNotifier
 from .rules import RuleEngine, parse_home_net
 from .simulator import ATTACK_TYPES, Sim, write_pcap
 
@@ -75,10 +76,14 @@ def main(argv=None):
                 fh.write(render(rows, fmt))
             print(f"exported {len(rows)} alert(s) as {fmt} -> {args.export}")
     else:
+        notifier = WebhookNotifier()
         print(f"sniffing {args.iface or 'default interface'} … Ctrl+C to stop")
+        if notifier.enabled:
+            print("webhook notifications on (NETSENTINEL_WEBHOOK_URL)")
         for _, _, al in det.run(sniff_live(args.iface, args.bpf), batch=16, rules=RuleEngine(home_net=home_net)):
             if al:
                 show(al.to_dict())
+                notifier.notify(al.to_dict())
 
 
 if __name__ == "__main__":

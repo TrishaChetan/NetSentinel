@@ -16,12 +16,24 @@ from pydantic import BaseModel
 
 from .capture import read_pcap
 from .detector import MODEL_PATH, Detector, analyse_packets
-from .export import FORMATS, filter_alerts, render
+from .export import FORMATS, SEVERITY_ORDER, filter_alerts, render
+from .notify import WebhookNotifier
 from .simulator import ATTACK_TYPES, Sim
 from .store import AlertStore
 
 app = FastAPI(title="NetSentinel", version="1.0.0", description="Hybrid ML network intrusion detection")
 store = AlertStore(Path(tempfile.gettempdir()) / "netsentinel_alerts.db")
+notifier = WebhookNotifier()  # no-op unless NETSENTINEL_WEBHOOK_URL is set
+
+SAMPLE_ALERT = {"ts": 0, "attack": "Test alert", "severity": "critical", "src": "10.0.0.5", "dst": "203.0.113.9",
+                "dport": 443, "source": "test", "confidence": 1.0, "mitre_id": "T0000", "mitre_name": "Webhook test",
+                "detail": "If you can read this, NetSentinel notifications are working."}
+
+
+def record_alert(a: dict) -> None:
+    """Store an alert and push it to the webhook if it's severe enough."""
+    store.add(a)
+    notifier.notify(a)
 TEMPLATE = Path(__file__).parent / "templates" / "dashboard.html"
 _demo = {"running": False, "thread": None}
 
@@ -74,6 +86,23 @@ def export_alerts(format: str = "jsonl", min_severity: str | None = None, status
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@app.get("/api/webhook")
+def webhook_status():
+    level = next(k for k, v in SEVERITY_ORDER.items() if v == notifier.min_level)
+    return {"enabled": notifier.enabled, "min_severity": level, "sent": notifier.sent, "failed": notifier.failed}
+
+
+@app.post("/api/webhook/test")
+def webhook_test():
+    """Send a sample critical alert to check the webhook configuration."""
+    if not notifier.enabled:
+        raise HTTPException(400, "Set NETSENTINEL_WEBHOOK_URL to enable notifications")
+    ok = notifier.notify({**SAMPLE_ALERT, "ts": time.time()}, block=True)
+    if not ok:
+        raise HTTPException(502, "Webhook did not accept the test message — check the URL")
+    return {"sent": True}
+
+
 @app.patch("/api/alerts/{alert_id}")
 def update_alert(alert_id: int, body: StatusUpdate):
     if body.status not in {"open", "investigating", "resolved", "false_positive"}:
@@ -97,7 +126,7 @@ async def upload_pcap(file: UploadFile = File(...)):
     finally:
         Path(tmp.name).unlink(missing_ok=True)
     for a in result["alerts"]:
-        store.add(a)
+        record_alert(a)
     store.bump("flows", result["flows"])
     return result
 
@@ -116,7 +145,7 @@ def _replay(req: DemoRequest):
         store.bump("packets", len(flow.fwd) + len(flow.bwd))
         store.bump("bytes", sum(p.length for p in flow.fwd + flow.bwd))
         if alert:
-            store.add(alert.to_dict())
+            record_alert(alert.to_dict())
     _demo["running"] = False
 
 
