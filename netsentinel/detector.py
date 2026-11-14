@@ -185,7 +185,9 @@ class Detector:
 
 
 def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine | None = None) -> dict:
+    from .summary import summarize
     t = time.time()
+    packets = list(packets)  # read once, used for detection and the traffic summary
     flows = alerts = 0
     out = []
     by_label: dict[str, int] = {}
@@ -194,4 +196,6 @@ def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine 
         by_label[lab] = by_label.get(lab, 0) + 1
         if alert:
             alerts += 1; out.append(alert.to_dict())
-    return {"flows": flows, "alerts": out, "flow_labels": by_label, "seconds": round(time.time() - t, 2)}
+    summary = summarize(packets, top=5, home_net=[str(n) for n in rules.home_net] if rules else None)
+    return {"flows": flows, "alerts": out, "flow_labels": by_label, "summary": summary,
+            "seconds": round(time.time() - t, 2)}

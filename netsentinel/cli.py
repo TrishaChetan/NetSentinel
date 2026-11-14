@@ -19,6 +19,7 @@ from .capture import read_pcap, sniff_live
 from .detector import Detector, analyse_packets
 from .export import SEVERITY_ORDER, filter_alerts, format_from_path, render
 from .notify import WebhookNotifier
+from .summary import format_summary, summarize
 from .rules import RuleEngine, parse_home_net
 from .simulator import ATTACK_TYPES, Sim, write_pcap
 
@@ -42,9 +43,11 @@ def main(argv=None):
     a.add_argument("pcap"); a.add_argument("--json")
     a.add_argument("--export", metavar="FILE", help="write alerts as .csv or .jsonl (SIEM-ready)")
     a.add_argument("--min-severity", choices=list(SEVERITY_ORDER), help="only export alerts at or above this level")
+    sm = sub.add_parser("summary", help="traffic overview of a pcap: top talkers, ports, protocols")
+    sm.add_argument("pcap"); sm.add_argument("--top", type=int, default=10); sm.add_argument("--json")
     lv = sub.add_parser("live", help="sniff a live interface (root required)")
     lv.add_argument("--iface"); lv.add_argument("--bpf", default="ip")
-    for p in (a, lv):
+    for p in (a, lv, sm):
         p.add_argument("--home-net", default=os.environ.get("NETSENTINEL_HOME_NET"),
                        help="internal networks, e.g. '10.0.0.0/8,100.64.0.0/10' (default: RFC 1918)")
     args = ap.parse_args(argv)
@@ -60,6 +63,13 @@ def main(argv=None):
     except ValueError as e:
         ap.error(f"invalid --home-net: {e}")
     print("HOME_NET:", ", ".join(map(str, home_net)))
+
+    if args.cmd == "summary":  # needs no trained model
+        s = summarize(read_pcap(args.pcap), top=args.top, home_net=home_net)
+        print(format_summary(s))
+        if args.json:
+            json.dump(s, open(args.json, "w"), indent=2)
+        return
 
     det = Detector.load()
     if args.cmd == "analyze":
