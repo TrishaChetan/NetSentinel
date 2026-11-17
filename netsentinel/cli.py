@@ -20,6 +20,7 @@ from .detector import Detector, analyse_packets
 from .export import SEVERITY_ORDER, filter_alerts, format_from_path, render
 from .notify import WebhookNotifier
 from .summary import format_summary, summarize
+from .suppress import Suppressor
 from .rules import RuleEngine, parse_home_net
 from .simulator import ATTACK_TYPES, Sim, write_pcap
 
@@ -50,6 +51,8 @@ def main(argv=None):
     for p in (a, lv, sm):
         p.add_argument("--home-net", default=os.environ.get("NETSENTINEL_HOME_NET"),
                        help="internal networks, e.g. '10.0.0.0/8,100.64.0.0/10' (default: RFC 1918)")
+    for p in (a, lv):
+        p.add_argument("--suppressions", help="YAML file of known-good activity to silence (default: suppressions.yml)")
     args = ap.parse_args(argv)
 
     if args.cmd == "simulate":
@@ -71,12 +74,16 @@ def main(argv=None):
             json.dump(s, open(args.json, "w"), indent=2)
         return
 
+    suppressor = Suppressor.load(args.suppressions)
+    if suppressor.entries:
+        print(f"{len(suppressor.entries)} suppression(s) loaded")
     det = Detector.load()
     if args.cmd == "analyze":
-        r = analyse_packets(det, read_pcap(args.pcap), rules=RuleEngine(home_net=home_net))
+        r = analyse_packets(det, read_pcap(args.pcap), rules=RuleEngine(home_net=home_net), suppressor=suppressor)
         for al in r["alerts"]:
             show(al)
-        print(f"\n{r['flows']} flows, {len(r['alerts'])} alerts in {r['seconds']} s")
+        print(f"\n{r['flows']} flows, {len(r['alerts'])} alerts in {r['seconds']} s"
+              + (f" ({r['suppressed']} suppressed)" if r['suppressed'] else ""))
         if args.json:
             json.dump(r, open(args.json, "w"), indent=2)
         if args.export:
@@ -92,8 +99,11 @@ def main(argv=None):
             print("webhook notifications on (NETSENTINEL_WEBHOOK_URL)")
         for _, _, al in det.run(sniff_live(args.iface, args.bpf), batch=16, rules=RuleEngine(home_net=home_net)):
             if al:
-                show(al.to_dict())
-                notifier.notify(al.to_dict())
+                d = al.to_dict()
+                if suppressor.check(d):
+                    continue
+                show(d)
+                notifier.notify(d)
 
 
 if __name__ == "__main__":

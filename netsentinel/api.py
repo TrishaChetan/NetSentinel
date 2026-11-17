@@ -20,20 +20,26 @@ from .export import FORMATS, SEVERITY_ORDER, filter_alerts, render
 from .notify import WebhookNotifier
 from .simulator import ATTACK_TYPES, Sim
 from .store import AlertStore
+from .suppress import Suppressor
 
 app = FastAPI(title="NetSentinel", version="1.0.0", description="Hybrid ML network intrusion detection")
 store = AlertStore(Path(tempfile.gettempdir()) / "netsentinel_alerts.db")
 notifier = WebhookNotifier()  # no-op unless NETSENTINEL_WEBHOOK_URL is set
+suppressor = Suppressor.load()  # suppressions.yml / NETSENTINEL_SUPPRESSIONS
 
 SAMPLE_ALERT = {"ts": 0, "attack": "Test alert", "severity": "critical", "src": "10.0.0.5", "dst": "203.0.113.9",
                 "dport": 443, "source": "test", "confidence": 1.0, "mitre_id": "T0000", "mitre_name": "Webhook test",
                 "detail": "If you can read this, NetSentinel notifications are working."}
 
 
-def record_alert(a: dict) -> None:
-    """Store an alert and push it to the webhook if it's severe enough."""
+def record_alert(a: dict) -> bool:
+    """Store an alert and push it to the webhook if it's severe enough.
+    Returns False (and stores nothing) when a suppression matches."""
+    if suppressor.check(a):
+        return False
     store.add(a)
     notifier.notify(a)
+    return True
 TEMPLATE = Path(__file__).parent / "templates" / "dashboard.html"
 _demo = {"running": False, "thread": None}
 
@@ -120,7 +126,7 @@ async def upload_pcap(file: UploadFile = File(...)):
     with tempfile.NamedTemporaryFile(suffix=".pcap", delete=False) as tmp:
         tmp.write(data)
     try:
-        result = analyse_packets(get_detector(), read_pcap(tmp.name))
+        result = analyse_packets(get_detector(), read_pcap(tmp.name), suppressor=suppressor)
     except Exception as e:  # malformed capture
         raise HTTPException(400, f"could not parse pcap: {e}") from e
     finally:
@@ -147,6 +153,12 @@ def _replay(req: DemoRequest):
         if alert:
             record_alert(alert.to_dict())
     _demo["running"] = False
+
+
+@app.get("/api/suppressions")
+def list_suppressions():
+    """Loaded suppressions with how many alerts each one has silenced."""
+    return {"suppressed": suppressor.suppressed, "entries": [s.describe() for s in suppressor.entries]}
 
 
 @app.post("/api/demo/start")

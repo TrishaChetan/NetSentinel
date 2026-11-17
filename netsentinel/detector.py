@@ -184,7 +184,8 @@ class Detector:
         return joblib.load(path)
 
 
-def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine | None = None) -> dict:
+def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine | None = None,
+                    suppressor=None) -> dict:
     from .summary import summarize
     t = time.time()
     packets = list(packets)  # read once, used for detection and the traffic summary
@@ -195,7 +196,11 @@ def analyse_packets(det: Detector, packets: Iterable[Packet], rules: RuleEngine 
         flows += 1
         by_label[lab] = by_label.get(lab, 0) + 1
         if alert:
-            alerts += 1; out.append(alert.to_dict())
+            d = alert.to_dict()
+            if suppressor is not None and suppressor.check(d):
+                continue  # known-good activity, counted in "suppressed"
+            alerts += 1; out.append(d)
     summary = summarize(packets, top=5, home_net=[str(n) for n in rules.home_net] if rules else None)
     return {"flows": flows, "alerts": out, "flow_labels": by_label, "summary": summary,
+            "suppressed": suppressor.suppressed if suppressor is not None else 0,
             "seconds": round(time.time() - t, 2)}

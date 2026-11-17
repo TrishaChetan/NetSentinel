@@ -1,0 +1,17 @@
+# Known-good activity NetSentinel should not alert on.
+# Copy to suppressions.yml (or point NETSENTINEL_SUPPRESSIONS at your file).
+# Every field except `reason` is optional; an entry applies when all the fields it sets match.
+
+- attack: PortScan
+  src: 10.0.0.50
+  reason: IT vulnerability scanner (weekly Nessus scan)
+
+- attack: Exfiltration
+  src: 10.0.0.20
+  dst: 203.0.113.0/24
+  dport: 443
+  reason: Nightly backup to cloud storage
+
+- src: 192.168.1.10
+  reason: Pen-test laptop during this month's engagement
+  expires: 2026-12-31

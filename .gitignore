@@ -9,3 +9,4 @@ data/*
 samples/*.pcap
 samples/*.pcapng
 *.db
+suppressions.yml
