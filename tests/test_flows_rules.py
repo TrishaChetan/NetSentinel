@@ -47,3 +47,39 @@ def test_exfil_rule_needs_rare_destination():
     s = Sim(4)
     benign = Sim(4).scenario(duration=200, attacks=[])
     assert "Exfiltration" in _run_rules(sorted(benign + s.exfiltration(1_700_000_150), key=lambda p: p.ts))
+
+
+def _hits(pkts, **kw):
+    eng, hits = RuleEngine(**kw), []
+    for f in assemble(pkts):
+        hits += eng.observe(f)
+    return hits
+
+
+def test_beacon_detected_once_per_hour():
+    s = Sim(5)
+    benign = Sim(5).scenario(duration=900, attacks=[])
+    pkts = sorted(benign + s.c2_beacon(1_700_000_010, beats=14, interval=60), key=lambda p: p.ts)
+    beacons = [h for h in _hits(pkts) if h.rule == "R6-BEACON"]
+    assert len(beacons) == 1                       # keeps beating, but one alert
+    assert beacons[0].src.startswith("10.0.0.") and "every 60s" in beacons[0].detail
+
+
+def test_beacon_needs_steady_timing():
+    s = Sim(6)
+    # same server, same count, but human-like random gaps -> no alert
+    jittery = s.c2_beacon(1_700_000_000, beats=14, interval=60, jitter=0.6)
+    assert "C2-Beacon" not in {h.attack for h in _hits(jittery)}
+    # too few check-ins -> no alert
+    assert "C2-Beacon" not in {h.attack for h in _hits(Sim(6).c2_beacon(1_700_000_000, beats=6))}
+    # internal-to-internal timers (e.g. monitoring polling the DB) are not C2
+    s = Sim(7)
+    inside = [p for p in s.c2_beacon(1_700_000_000, beats=14)]
+    for p in inside:
+        p.src, p.dst = ("10.0.0.20", "10.0.0.7") if p.src.startswith("10.") else ("10.0.0.7", "10.0.0.20")
+    assert "C2-Beacon" not in {h.attack for h in _hits(inside)}
+
+
+def test_scenario_can_include_beacons():
+    pkts = Sim(8).scenario(duration=900, attacks=["C2-Beacon"], attack_count=1)
+    assert "C2-Beacon" in _run_rules(pkts)

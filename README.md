@@ -50,6 +50,7 @@ flowchart LR
 | DNS tunnelling | T1071.004 | RF + rule R4 (≥20 oversized queries / 60 s) |
 | Slowloris | T1499.002 | RF + Isolation Forest |
 | Data exfiltration | T1048 | RF + Isolation Forest + rule R5 (large upload to rare external host) |
+| C2 beaconing | T1071 / T1573 | rule R6: an internal host checks in with one outside server on a steady timer (≥8 connections, gaps within 10% of each other, every 5 s–1 h). Alerts once an hour per beacon. Try it with `Sim().scenario(attacks=["C2-Beacon"])` |
 
 ## Quick start
 
@@ -147,7 +148,7 @@ netsentinel/
   flows.py       packet → flow assembly, 29 features
   simulator.py   labelled traffic generator (benign, hard negatives, 6 attacks) + pcap writer
   capture.py     pcap reader, live sniffer (Scapy)
-  rules.py       sliding-window rule engine (R1–R5)
+  rules.py       sliding-window rule engine (R1–R6)
   detector.py    RF + Isolation Forest + rules, alert manager, MITRE mapping
   train.py       training, 3 experiments, plots, CIC-IDS2017 loader
   store.py       SQLite alert store

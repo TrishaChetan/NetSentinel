@@ -52,11 +52,12 @@ class RuleEngine:
     def __init__(self, scan_ports=25, scan_window=60, flood_flows=100, flood_window=10,
                  brute_flows=10, brute_window=60, dns_len=150, dns_count=20, cooldown=120,
                  exfil_bytes=1_000_000, exfil_ratio=10.0, rare_peers=2, warmup_flows=200,
-                 home_net=None):
+                 beacon_min=8, beacon_jitter=0.1, beacon_interval=(5, 3600), home_net=None):
         self.cfg = dict(scan_ports=scan_ports, scan_window=scan_window, flood_flows=flood_flows,
                         flood_window=flood_window, brute_flows=brute_flows, brute_window=brute_window,
                         dns_len=dns_len, dns_count=dns_count, exfil_bytes=exfil_bytes,
-                        exfil_ratio=exfil_ratio, rare_peers=rare_peers, warmup_flows=warmup_flows)
+                        exfil_ratio=exfil_ratio, rare_peers=rare_peers, warmup_flows=warmup_flows,
+                        beacon_min=beacon_min, beacon_jitter=beacon_jitter, beacon_interval=beacon_interval)
         self.home_net = parse_home_net(home_net)
         self.peers: dict[str, set] = defaultdict(set)  # external dst -> internal hosts that talked to it
         self.seen_flows = 0
@@ -65,6 +66,7 @@ class RuleEngine:
         self.halfopen: dict[str, deque] = defaultdict(deque)   # dst -> ts
         self.ssh: dict[tuple, deque] = defaultdict(deque)      # (src,dst) -> ts
         self.dns: dict[str, deque] = defaultdict(deque)        # src -> ts
+        self.beacons: dict[tuple, deque] = defaultdict(lambda: deque(maxlen=32))  # (src,dst,dport) -> starts
         self.last_fired: dict[tuple, float] = {}
 
     def _fire(self, key, ts, hit: RuleHit) -> list[RuleHit]:
@@ -85,6 +87,39 @@ class RuleEngine:
             return False
         return any(a.version == n.version and a in n for n in self.home_net)
 
+    def _beacon(self, f: Flow) -> list[RuleHit]:
+        """R6: command-and-control beaconing.
+
+        Malware "phones home" on a timer (every 60 s, every 5 min...), so the
+        gaps between its connections to one server are almost identical. People
+        and normal apps are bursty. Fires when the last `beacon_min` connections
+        from one internal host to one external host:port have a mean gap inside
+        `beacon_interval` and a coefficient of variation (stdev / mean) below
+        `beacon_jitter`.
+        """
+        c = self.cfg
+        d = self.beacons[(f.src, f.dst, f.dport)]
+        if d and f.start - d[-1] < 1.0:      # same burst (e.g. parallel requests): not a new beat
+            return []
+        d.append(f.start)
+        if len(d) < c["beacon_min"]:
+            return []
+        recent = list(d)[-c["beacon_min"]:]
+        gaps = [b - a for a, b in zip(recent, recent[1:])]
+        mean = sum(gaps) / len(gaps)
+        lo, hi = c["beacon_interval"]
+        if not lo <= mean <= hi:
+            return []
+        cv = (sum((g - mean) ** 2 for g in gaps) / len(gaps)) ** 0.5 / mean
+        if cv > c["beacon_jitter"]:
+            return []
+        key = ("beacon", f.src, f.dst, f.dport)
+        if f.start - self.last_fired.get(key, -1e18) < 3600:  # a beacon keeps beating; alert once an hour
+            return []
+        return self._fire(key, f.start, RuleHit(
+            "R6-BEACON", "C2-Beacon", f.src, f.dst, f.start,
+            f"{len(recent)} connections to port {f.dport} every {mean:.0f}s (jitter {cv:.0%})", "high"))
+
     def observe(self, f: Flow) -> list[RuleHit]:
         c, ts, hits = self.cfg, f.start, []
         self.seen_flows += 1
@@ -98,6 +133,7 @@ class RuleEngine:
                     "R5-EXFIL", "Exfiltration", f.src, f.dst, ts,
                     f"{up / 1e6:.1f} MB uploaded to rare external host (contacted by {len(self.peers[f.dst])} internal host(s))",
                     "critical"))
+            hits += self._beacon(f)
         pk = f.fwd + f.bwd
         syn_only = f.proto == TCP and all(p.flags in ("S", "SA", "RA", "R") for p in pk)
 

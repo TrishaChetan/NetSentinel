@@ -214,6 +214,23 @@ class Sim:
         out.append(Packet(t, c, dst, sp, port, TCP, 52, "FA", 0, "Exfiltration"))
         return out
 
+    def c2_beacon(self, t, beats=14, interval=None, jitter=0.03):
+        """Implant checking in with its C2 server on a timer: tiny HTTPS sessions,
+        same server every time, gaps of `interval` s +/- `jitter`."""
+        r, c, dst = self.r, self.r.choice(CLIENTS), self.r.choice(ATTACKERS)
+        interval = interval or r.choice([30, 60, 120, 300])
+        out = []
+        for _ in range(beats):
+            sp, tt = self.eph(), t
+            out += [Packet(tt, c, dst, sp, 443, TCP, 60, "S", 0, "C2-Beacon"),
+                    Packet(tt + .04, dst, c, 443, sp, TCP, 60, "SA", 0, "C2-Beacon"),
+                    Packet(tt + .05, c, dst, sp, 443, TCP, 52 + 180, "PA", 180, "C2-Beacon"),   # "any tasks for me?"
+                    Packet(tt + .09, dst, c, 443, sp, TCP, 52 + 64, "PA", 64, "C2-Beacon"),     # "no"
+                    Packet(tt + .10, c, dst, sp, 443, TCP, 52, "FA", 0, "C2-Beacon"),
+                    Packet(tt + .14, dst, c, 443, sp, TCP, 52, "FA", 0, "C2-Beacon")]
+            t += interval * (1 + r.uniform(-jitter, jitter))
+        return out
+
     # ---------------- scenario ----------------------------------------------
     def scenario(self, duration: float = 600, benign_rate: float = 4.0, attacks: list[str] | None = None,
                  attack_count: int = 2, t0: float = 1_700_000_000.0) -> list[Packet]:
@@ -226,7 +243,8 @@ class Sim:
             t += r.expovariate(benign_rate)
         attack_fns = {"DoS-SYNFlood": self.syn_flood,
                       "PortScan": lambda t: self.port_scan(t) if self.r.random() < .6 else self.slow_scan(t), "SSH-BruteForce": self.ssh_bruteforce,
-                      "DNS-Tunneling": self.dns_tunnel, "Slowloris": self.slowloris, "Exfiltration": self.exfiltration}
+                      "DNS-Tunneling": self.dns_tunnel, "Slowloris": self.slowloris, "Exfiltration": self.exfiltration,
+                      "C2-Beacon": self.c2_beacon}  # opt-in: not in ATTACK_TYPES, so ML training data is unchanged
         for name in attacks if attacks is not None else ATTACK_TYPES:
             for _ in range(attack_count):
                 pkts += attack_fns[name](t0 + r.uniform(0, duration * 0.8))
